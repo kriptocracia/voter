@@ -5,7 +5,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
 
 use crate::app::App;
-use crate::nostr::events::ElectionStatus;
+use voter::nostr::events::ElectionStatus;
 
 pub fn render(app: &App, frame: &mut Frame) {
     let chunks = Layout::vertical([

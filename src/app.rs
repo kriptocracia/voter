@@ -4,15 +4,18 @@ use crossterm::event::KeyCode;
 use nostr_sdk::prelude::Keys;
 use tokio::sync::mpsc;
 
-use crate::config::AppConfig;
-use crate::nostr::events::{Election, ElectionResults};
-use crate::state::AppState;
+use voter::config::AppConfig;
+use voter::nostr::client::NostrAction;
+use voter::nostr::events::{Election, ElectionResults};
+use voter::state::AppState;
 
 /// All possible actions flowing through the app event loop.
 #[derive(Debug, Clone)]
 pub enum Action {
     Quit,
     KeyPress(KeyCode),
+    Resize,
+    Nostr(NostrAction),
     IdentityCreated(String),
     IdentityUnlocked,
 }
@@ -96,6 +99,8 @@ impl App {
         match action {
             Action::Quit => return ShouldQuit::Yes,
             Action::KeyPress(key) => self.handle_key(key),
+            Action::Resize => {} // triggers redraw via main loop
+            Action::Nostr(nostr_action) => self.handle_nostr(nostr_action),
             Action::IdentityCreated(pubkey) => {
                 self.status_message = Some(format!("Identity created: {}", &pubkey[..16]));
                 self.screen = Screen::ElectionList;
@@ -140,14 +145,40 @@ impl App {
         }
     }
 
+    fn handle_nostr(&mut self, action: NostrAction) {
+        match action {
+            NostrAction::ElectionUpdate(election) => {
+                self.elections
+                    .insert(election.election_id.clone(), election);
+            }
+            NostrAction::ElectionResult(results) => {
+                self.results.insert(results.election_id.clone(), results);
+            }
+            NostrAction::EcResponse(response) => {
+                self.status_message = Some(format!("EC response: {response:?}"));
+            }
+            NostrAction::ConnectionStatus(connected) => {
+                self.connected = connected;
+                if connected {
+                    self.status_message = Some("Connected to relays".to_string());
+                } else {
+                    self.error_message = Some("Disconnected from relays".to_string());
+                }
+            }
+            NostrAction::Error(msg) => {
+                self.error_message = Some(msg);
+            }
+        }
+    }
+
     fn handle_welcome_key(&mut self, key: KeyCode) {
         match key {
             KeyCode::Char('1') | KeyCode::Char('g') => {
-                let keys = crate::identity::generate_keypair();
+                let keys = voter::identity::generate_keypair();
                 let path = self.config.identity.path.clone();
-                match crate::identity::save_identity(&keys, None, &path) {
+                match voter::identity::save_identity(&keys, None, &path) {
                     Ok(()) => {
-                        let pubkey = crate::identity::export_public_key(&keys);
+                        let pubkey = voter::identity::export_public_key(&keys);
                         self.keys = Some(keys);
                         let _ = self.action_tx.send(Action::IdentityCreated(pubkey));
                     }
@@ -168,7 +199,7 @@ impl App {
             KeyCode::Enter => {
                 let path = self.config.identity.path.clone();
                 let password = self.password_input.clone();
-                match crate::identity::load_identity(Some(&password), &path) {
+                match voter::identity::load_identity(Some(&password), &path) {
                     Ok(keys) => {
                         self.keys = Some(keys);
                         self.password_input.clear();
