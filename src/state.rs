@@ -80,6 +80,11 @@ impl AppState {
             .tokens
             .get_mut(election_id)
             .ok_or_else(|| VoterError::State(format!("no token for election {election_id}")))?;
+        if token.consumed {
+            return Err(VoterError::State(format!(
+                "token for election {election_id} already consumed"
+            )));
+        }
         token.consumed = true;
         Ok(())
     }

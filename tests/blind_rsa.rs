@@ -81,8 +81,13 @@ fn encode_decode_token_roundtrip() {
     // Decode
     let (sig_bytes, randomizer) = blind_rsa::decode_token(&token_b64).unwrap();
     assert_eq!(sig_bytes, sig.0);
-    if msg_randomizer.is_some() {
-        assert!(randomizer.is_some());
+    match (msg_randomizer, randomizer) {
+        (Some(expected), Some(actual)) => {
+            let expected_bytes: &[u8] = expected.as_ref();
+            assert_eq!(expected_bytes, actual.as_slice());
+        }
+        (None, None) => {}
+        _ => panic!("randomizer presence mismatch"),
     }
 }
 

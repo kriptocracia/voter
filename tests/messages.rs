@@ -20,6 +20,7 @@ fn serialize_request_token_message() {
     };
     let json = serde_json::to_value(&msg).unwrap();
     assert_eq!(json["action"], "request-token");
+    assert_eq!(json["election_id"], "elec-001");
     assert_eq!(json["blinded_nonce"], "base64data==");
 }
 
@@ -33,7 +34,10 @@ fn serialize_cast_vote_message() {
     };
     let json = serde_json::to_value(&msg).unwrap();
     assert_eq!(json["action"], "cast-vote");
+    assert_eq!(json["election_id"], "elec-001");
     assert_eq!(json["candidate_ids"], serde_json::json!([1, 3]));
+    assert_eq!(json["h_n"], "abc123");
+    assert_eq!(json["token"], "tokendata==");
 }
 
 #[test]

@@ -70,13 +70,14 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // Connect to Nostr relays if identity is available
+    let mut nostr_task: Option<tokio::task::JoinHandle<()>> = None;
     if let Some(ref keys) = app.keys {
         let nostr_tx = action_tx.clone();
         let nostr_keys = keys.clone();
         let nostr_config = app.config.clone();
-        tokio::spawn(async move {
+        nostr_task = Some(tokio::spawn(async move {
             connect_nostr(&nostr_keys, &nostr_config, nostr_tx).await;
-        });
+        }));
     }
 
     // Setup terminal
@@ -119,12 +120,15 @@ async fn main() -> anyhow::Result<()> {
             }
 
             if should_connect && let Some(ref keys) = app.keys {
+                if let Some(handle) = nostr_task.take() {
+                    handle.abort();
+                }
                 let nostr_tx = app.action_tx.clone();
                 let nostr_keys = keys.clone();
                 let nostr_config = app.config.clone();
-                tokio::spawn(async move {
+                nostr_task = Some(tokio::spawn(async move {
                     connect_nostr(&nostr_keys, &nostr_config, nostr_tx).await;
-                });
+                }));
             }
         }
     }

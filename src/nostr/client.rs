@@ -124,12 +124,13 @@ impl NostrVoterClient {
         let content = serde_json::to_string(msg)?;
         let rumor = EventBuilder::text_note(content).build(throwaway_keys.public_key());
 
-        anon_client
+        let result = anon_client
             .gift_wrap(&ec_pubkey, rumor, Vec::<Tag>::new())
-            .await
-            .map_err(|e| VoterError::Nostr(format!("anonymous gift_wrap failed: {e}")))?;
+            .await;
 
         anon_client.disconnect().await;
+
+        result.map_err(|e| VoterError::Nostr(format!("anonymous gift_wrap failed: {e}")))?;
 
         Ok(())
     }
@@ -161,8 +162,11 @@ impl NostrVoterClient {
                                 }
                             }
                             Kind::GiftWrap => {
-                                // Gift wrap unwrapping is handled by the caller
-                                // since it needs the client's signer.
+                                if let Ok(response) =
+                                    serde_json::from_str::<EcResponse>(event.content.as_str())
+                                {
+                                    let _ = tx.send(NostrAction::EcResponse(response));
+                                }
                             }
                             _ => {}
                         }

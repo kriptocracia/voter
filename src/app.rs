@@ -94,7 +94,10 @@ impl App {
 
     /// Process an action and return whether the app should quit.
     pub fn update(&mut self, action: Action) -> ShouldQuit {
-        self.error_message = None;
+        // Clear transient errors on user actions, but preserve connection errors
+        if matches!(action, Action::KeyPress(_)) {
+            self.error_message = None;
+        }
 
         match action {
             Action::Quit => return ShouldQuit::Yes,
