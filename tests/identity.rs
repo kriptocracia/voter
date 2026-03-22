@@ -88,3 +88,20 @@ fn export_public_key_is_hex() {
     assert_eq!(pubkey.len(), 64);
     assert!(pubkey.chars().all(|c| c.is_ascii_hexdigit()));
 }
+
+#[test]
+fn import_keypair_roundtrip() {
+    let keys = identity::generate_keypair();
+    let secret_hex = keys.secret_key().to_secret_hex();
+    let imported = identity::import_keypair(&secret_hex).unwrap();
+    assert_eq!(
+        identity::export_public_key(&keys),
+        identity::export_public_key(&imported)
+    );
+}
+
+#[test]
+fn import_keypair_invalid_hex_fails() {
+    let result = identity::import_keypair("not-a-valid-hex-key");
+    assert!(result.is_err());
+}

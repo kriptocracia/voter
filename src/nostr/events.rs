@@ -12,6 +12,9 @@ pub struct Election {
     /// Base64 DER-encoded RSA public key for blind signing.
     pub rsa_pub_key: String,
     pub candidates: Vec<Candidate>,
+    /// Nostr pubkey of the EC that published this election (not from JSON).
+    #[serde(skip)]
+    pub ec_pubkey: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

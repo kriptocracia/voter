@@ -23,16 +23,32 @@ use voter::state::AppState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Initialize tracing for debug builds — logs to file to avoid TUI interference.
+    // Initialize tracing for debug builds — writes to a log file to avoid TUI interference.
     // Never logs sensitive data (tokens, nonces, keys).
     if cfg!(debug_assertions) {
         use tracing_subscriber::EnvFilter;
         let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn"));
-        tracing_subscriber::fmt()
-            .with_env_filter(filter)
-            .with_writer(std::io::stderr)
-            .with_ansi(false)
-            .init();
+        let log_path = config::config_dir().join("voter.log");
+        if let Some(parent) = log_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        match std::fs::File::create(&log_path) {
+            Ok(log_file) => {
+                tracing_subscriber::fmt()
+                    .with_env_filter(filter)
+                    .with_writer(log_file)
+                    .with_ansi(false)
+                    .init();
+            }
+            Err(_) => {
+                // Fallback to stderr if log file cannot be created
+                tracing_subscriber::fmt()
+                    .with_env_filter(filter)
+                    .with_writer(std::io::stderr)
+                    .with_ansi(false)
+                    .init();
+            }
+        }
     }
 
     // Load configuration
@@ -158,30 +174,32 @@ async fn connect_nostr(keys: &Keys, config: &AppConfig, action_tx: mpsc::Unbound
                 let _ = action_tx.send(Action::Nostr(NostrAction::ConnectionStatus(true)));
 
                 if let Err(e) = client.subscribe().await {
-                    warn!(error = %e, "subscription failed");
+                    warn!(error = %e, "subscription failed, will reconnect");
                     let _ = action_tx.send(Action::Nostr(NostrAction::Error(format!(
                         "Subscription failed: {e}"
                     ))));
-                }
-
-                // Bridge NostrAction channel into main Action channel
-                let (nostr_tx, mut nostr_rx) = mpsc::unbounded_channel::<NostrAction>();
-                let bridge_tx = action_tx.clone();
-                tokio::spawn(async move {
-                    while let Some(nostr_action) = nostr_rx.recv().await {
-                        if bridge_tx.send(Action::Nostr(nostr_action)).is_err() {
-                            break;
+                    client.disconnect().await;
+                    let _ = action_tx.send(Action::Nostr(NostrAction::ConnectionStatus(false)));
+                } else {
+                    // Bridge NostrAction channel into main Action channel
+                    let (nostr_tx, mut nostr_rx) = mpsc::unbounded_channel::<NostrAction>();
+                    let bridge_tx = action_tx.clone();
+                    tokio::spawn(async move {
+                        while let Some(nostr_action) = nostr_rx.recv().await {
+                            if bridge_tx.send(Action::Nostr(nostr_action)).is_err() {
+                                break;
+                            }
                         }
+                    });
+
+                    // Listen blocks until disconnection
+                    if let Err(e) = client.listen(nostr_tx).await {
+                        warn!(error = %e, "listener disconnected");
                     }
-                });
 
-                // Listen blocks until disconnection
-                if let Err(e) = client.listen(nostr_tx).await {
-                    warn!(error = %e, "listener disconnected");
+                    client.disconnect().await;
+                    let _ = action_tx.send(Action::Nostr(NostrAction::ConnectionStatus(false)));
                 }
-
-                client.disconnect().await;
-                let _ = action_tx.send(Action::Nostr(NostrAction::ConnectionStatus(false)));
             }
             Err(e) => {
                 warn!(error = %e, backoff_secs, "connection failed, retrying");

@@ -13,6 +13,9 @@ use crate::error::{Result, VoterError};
 pub type BrsaPk = PublicKey<Sha384, PSS, Randomized>;
 pub type BrsaSk = SecretKey<Sha384, PSS, Randomized>;
 
+/// Size of MessageRandomizer in bytes (fixed at 32 per blind-rsa-signatures).
+const MESSAGE_RANDOMIZER_LEN: usize = 32;
+
 /// Blind a nonce hash using the election's RSA public key.
 ///
 /// Returns the blinding result (contains the blind message to send to EC
@@ -65,13 +68,14 @@ pub fn encode_token(sig: &Signature, msg_randomizer: Option<MessageRandomizer>) 
     BASE64_STANDARD.encode(&bytes)
 }
 
-/// Decode a base64 token string back into signature bytes and optional randomizer.
+/// Decode a base64 token string back into signature bytes and optional
+/// randomizer (MESSAGE_RANDOMIZER_LEN bytes).
 pub fn decode_token(token_b64: &str) -> Result<(Vec<u8>, Option<Vec<u8>>)> {
     let bytes = BASE64_STANDARD
         .decode(token_b64)
         .map_err(|e| VoterError::Crypto(format!("base64 decode token: {e}")))?;
-    if bytes.len() > 32 {
-        let split = bytes.len() - 32;
+    if bytes.len() > MESSAGE_RANDOMIZER_LEN {
+        let split = bytes.len() - MESSAGE_RANDOMIZER_LEN;
         let sig_bytes = bytes[..split].to_vec();
         let randomizer = bytes[split..].to_vec();
         Ok((sig_bytes, Some(randomizer)))
@@ -80,12 +84,16 @@ pub fn decode_token(token_b64: &str) -> Result<(Vec<u8>, Option<Vec<u8>>)> {
     }
 }
 
-/// Compute SHA-256 hash of a nonce, returned as hex string.
-pub fn compute_h_n(nonce: &[u8]) -> String {
+/// Compute SHA-256 hash of a nonce, returned as raw bytes.
+pub fn compute_h_n(nonce: &[u8]) -> Vec<u8> {
     let mut hasher = Sha256::new();
     hasher.update(nonce);
-    let result = hasher.finalize();
-    hex::encode(result)
+    hasher.finalize().to_vec()
+}
+
+/// Compute SHA-256 hash of a nonce, returned as hex string (for protocol messages).
+pub fn compute_h_n_hex(nonce: &[u8]) -> String {
+    hex::encode(compute_h_n(nonce))
 }
 
 /// Generate a new RSA keypair for testing purposes only.

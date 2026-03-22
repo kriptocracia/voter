@@ -6,10 +6,9 @@ fn blind_sign_finalize_verify_roundtrip() {
 
     let nonce = b"test-nonce-32-bytes-padded-ok!!!";
     let h_n = blind_rsa::compute_h_n(nonce);
-    let h_n_bytes = h_n.as_bytes();
 
     // Blind
-    let (blinding_result, blind_msg_b64) = blind_rsa::blind_nonce(&pk, h_n_bytes).unwrap();
+    let (blinding_result, blind_msg_b64) = blind_rsa::blind_nonce(&pk, &h_n).unwrap();
     assert!(!blind_msg_b64.is_empty());
 
     // Server signs the blind message
@@ -21,10 +20,10 @@ fn blind_sign_finalize_verify_roundtrip() {
 
     // Finalize (unblind)
     let (sig, msg_randomizer) =
-        blind_rsa::finalize_token(&pk, &blind_sig_b64, &blinding_result, h_n_bytes).unwrap();
+        blind_rsa::finalize_token(&pk, &blind_sig_b64, &blinding_result, &h_n).unwrap();
 
     // Verify
-    blind_rsa::verify_token(&pk, &sig, msg_randomizer, h_n_bytes).unwrap();
+    blind_rsa::verify_token(&pk, &sig, msg_randomizer, &h_n).unwrap();
 }
 
 #[test]
@@ -33,9 +32,8 @@ fn tampered_signature_fails_verification() {
 
     let nonce = b"another-nonce-32-bytes-padded!!";
     let h_n = blind_rsa::compute_h_n(nonce);
-    let h_n_bytes = h_n.as_bytes();
 
-    let (blinding_result, blind_msg_b64) = blind_rsa::blind_nonce(&pk, h_n_bytes).unwrap();
+    let (blinding_result, blind_msg_b64) = blind_rsa::blind_nonce(&pk, &h_n).unwrap();
 
     let blind_msg_bytes =
         base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &blind_msg_b64).unwrap();
@@ -44,14 +42,14 @@ fn tampered_signature_fails_verification() {
         base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &blind_sig.0);
 
     let (mut sig, msg_randomizer) =
-        blind_rsa::finalize_token(&pk, &blind_sig_b64, &blinding_result, h_n_bytes).unwrap();
+        blind_rsa::finalize_token(&pk, &blind_sig_b64, &blinding_result, &h_n).unwrap();
 
     // Tamper with the signature
     if let Some(byte) = sig.0.first_mut() {
         *byte ^= 0xFF;
     }
 
-    let result = blind_rsa::verify_token(&pk, &sig, msg_randomizer, h_n_bytes);
+    let result = blind_rsa::verify_token(&pk, &sig, msg_randomizer, &h_n);
     assert!(result.is_err());
 }
 
@@ -61,9 +59,8 @@ fn encode_decode_token_roundtrip() {
 
     let nonce = b"roundtrip-nonce-32-bytes-pad!!!";
     let h_n = blind_rsa::compute_h_n(nonce);
-    let h_n_bytes = h_n.as_bytes();
 
-    let (blinding_result, blind_msg_b64) = blind_rsa::blind_nonce(&pk, h_n_bytes).unwrap();
+    let (blinding_result, blind_msg_b64) = blind_rsa::blind_nonce(&pk, &h_n).unwrap();
 
     let blind_msg_bytes =
         base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &blind_msg_b64).unwrap();
@@ -72,7 +69,7 @@ fn encode_decode_token_roundtrip() {
         base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &blind_sig.0);
 
     let (sig, msg_randomizer) =
-        blind_rsa::finalize_token(&pk, &blind_sig_b64, &blinding_result, h_n_bytes).unwrap();
+        blind_rsa::finalize_token(&pk, &blind_sig_b64, &blinding_result, &h_n).unwrap();
 
     // Encode
     let token_b64 = blind_rsa::encode_token(&sig, msg_randomizer);
@@ -97,7 +94,7 @@ fn compute_h_n_is_deterministic() {
     let h1 = blind_rsa::compute_h_n(nonce);
     let h2 = blind_rsa::compute_h_n(nonce);
     assert_eq!(h1, h2);
-    assert_eq!(h1.len(), 64); // SHA-256 hex = 64 chars
+    assert_eq!(h1.len(), 32); // SHA-256 raw = 32 bytes
 }
 
 #[test]
@@ -105,4 +102,12 @@ fn compute_h_n_different_inputs_differ() {
     let h1 = blind_rsa::compute_h_n(b"input-a");
     let h2 = blind_rsa::compute_h_n(b"input-b");
     assert_ne!(h1, h2);
+}
+
+#[test]
+fn compute_h_n_hex_returns_64_char_string() {
+    let nonce = b"hex-test-nonce";
+    let hex = blind_rsa::compute_h_n_hex(nonce);
+    assert_eq!(hex.len(), 64);
+    assert!(hex.chars().all(|c| c.is_ascii_hexdigit()));
 }

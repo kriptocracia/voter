@@ -100,5 +100,5 @@ fn chrono_now() -> String {
     let duration = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap_or_default();
-    format!("{}", duration.as_secs())
+    duration.as_secs().to_string()
 }
