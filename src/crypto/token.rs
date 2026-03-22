@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::crypto::blind_rsa;
+use crate::error::{Result, VoterError};
 
 /// A voting token obtained via the blind RSA signing protocol.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,13 +21,14 @@ pub struct VotingToken {
 }
 
 /// Generate a cryptographically random 32-byte nonce.
-pub fn generate_nonce() -> [u8; 32] {
+pub fn generate_nonce() -> Result<[u8; 32]> {
     let mut nonce = [0u8; 32];
-    getrandom::fill(&mut nonce).expect("getrandom failed");
-    nonce
+    getrandom::fill(&mut nonce)
+        .map_err(|e| VoterError::Crypto(format!("random nonce generation failed: {e}")))?;
+    Ok(nonce)
 }
 
 /// Compute the nonce hash (h_n) as a hex-encoded SHA-256 digest.
 pub fn compute_h_n(nonce: &[u8]) -> String {
-    blind_rsa::compute_h_n(nonce)
+    blind_rsa::compute_h_n_hex(nonce)
 }

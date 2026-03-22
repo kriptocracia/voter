@@ -7,6 +7,7 @@ use tokio::sync::mpsc;
 use voter::config::AppConfig;
 use voter::nostr::client::NostrAction;
 use voter::nostr::events::{Election, ElectionResults};
+use voter::nostr::messages::EcResponse;
 use voter::state::AppState;
 
 /// All possible actions flowing through the app event loop.
@@ -158,13 +159,15 @@ impl App {
                 self.results.insert(results.election_id.clone(), results);
             }
             NostrAction::EcResponse(response) => {
-                self.status_message = Some(format!("EC response: {response:?}"));
+                self.status_message = Some(format_ec_response(&response));
             }
             NostrAction::ConnectionStatus(connected) => {
                 self.connected = connected;
                 if connected {
+                    self.error_message = None;
                     self.status_message = Some("Connected to relays".to_string());
                 } else {
+                    self.status_message = None;
                     self.error_message = Some("Disconnected from relays".to_string());
                 }
             }
@@ -360,5 +363,23 @@ impl App {
             name_a.cmp(name_b)
         });
         ids
+    }
+}
+
+fn format_ec_response(response: &EcResponse) -> String {
+    match response {
+        EcResponse::Ok {
+            action,
+            blind_signature,
+        } => {
+            if blind_signature.is_some() {
+                format!("EC: {action} (signature received)")
+            } else {
+                format!("EC: {action}")
+            }
+        }
+        EcResponse::Error { code, message } => {
+            format!("EC error: {code} — {message}")
+        }
     }
 }

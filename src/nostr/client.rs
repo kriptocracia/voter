@@ -1,10 +1,13 @@
 use nostr_sdk::prelude::*;
 use tokio::sync::mpsc;
+use tracing::warn;
 
 use crate::config::AppConfig;
 use crate::error::{Result, VoterError};
 use crate::nostr::events::{Election, ElectionResults};
-use crate::nostr::messages::{EcResponse, VoterMessage};
+use crate::nostr::messages::EcResponse;
+#[allow(unused_imports)]
+use crate::nostr::messages::VoterMessage;
 
 /// Actions produced by the Nostr client for the app event loop.
 #[derive(Debug, Clone)]
@@ -43,6 +46,7 @@ impl NostrVoterClient {
     }
 
     /// Set the EC's public key (needed to send Gift Wrap messages).
+    #[allow(dead_code)]
     pub fn set_ec_pubkey(&mut self, pubkey: PublicKey) {
         self.ec_pubkey = Some(pubkey);
     }
@@ -76,6 +80,7 @@ impl NostrVoterClient {
     }
 
     /// Send a voter message to the EC via NIP-59 Gift Wrap.
+    #[allow(dead_code)]
     pub async fn send_to_ec(&self, msg: &VoterMessage) -> Result<()> {
         let ec_pubkey = self
             .ec_pubkey
@@ -101,6 +106,7 @@ impl NostrVoterClient {
     }
 
     /// Send a voter message to the EC using a specific (throwaway) signer.
+    #[allow(dead_code)]
     pub async fn send_to_ec_anonymous(
         &self,
         msg: &VoterMessage,
@@ -144,28 +150,52 @@ impl NostrVoterClient {
         client
             .handle_notifications(|notification| {
                 let tx = tx.clone();
+                let client = client.clone();
                 async move {
                     if let RelayPoolNotification::Event { event, .. } = notification {
                         match event.kind {
                             Kind::Custom(35_000) => {
-                                if let Ok(election) =
-                                    serde_json::from_str::<Election>(event.content.as_str())
-                                {
-                                    let _ = tx.send(NostrAction::ElectionUpdate(election));
+                                match serde_json::from_str::<Election>(event.content.as_str()) {
+                                    Ok(mut election) => {
+                                        // Capture EC pubkey from the event author
+                                        election.ec_pubkey = Some(event.pubkey.to_hex());
+                                        let _ = tx.send(NostrAction::ElectionUpdate(election));
+                                    }
+                                    Err(e) => {
+                                        warn!(error = %e, "failed to parse election event");
+                                    }
                                 }
                             }
                             Kind::Custom(35_001) => {
-                                if let Ok(results) =
-                                    serde_json::from_str::<ElectionResults>(event.content.as_str())
-                                {
-                                    let _ = tx.send(NostrAction::ElectionResult(results));
+                                match serde_json::from_str::<ElectionResults>(
+                                    event.content.as_str(),
+                                ) {
+                                    Ok(results) => {
+                                        let _ = tx.send(NostrAction::ElectionResult(results));
+                                    }
+                                    Err(e) => {
+                                        warn!(error = %e, "failed to parse results event");
+                                    }
                                 }
                             }
                             Kind::GiftWrap => {
-                                if let Ok(response) =
-                                    serde_json::from_str::<EcResponse>(event.content.as_str())
-                                {
-                                    let _ = tx.send(NostrAction::EcResponse(response));
+                                match client.unwrap_gift_wrap(&event).await {
+                                    Ok(unwrapped) => {
+                                        match serde_json::from_str::<EcResponse>(
+                                            unwrapped.rumor.content.as_str(),
+                                        ) {
+                                            Ok(response) => {
+                                                let _ =
+                                                    tx.send(NostrAction::EcResponse(response));
+                                            }
+                                            Err(e) => {
+                                                warn!(error = %e, "failed to parse EC response from gift wrap");
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        warn!(error = %e, "failed to unwrap gift wrap");
+                                    }
                                 }
                             }
                             _ => {}
@@ -186,6 +216,7 @@ impl NostrVoterClient {
     }
 
     /// Get a reference to the underlying nostr-sdk Client.
+    #[allow(dead_code)]
     pub fn inner(&self) -> &Client {
         &self.client
     }
