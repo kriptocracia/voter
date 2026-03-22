@@ -17,6 +17,14 @@ pub fn generate_keypair() -> Keys {
     Keys::generate()
 }
 
+/// Import a keypair from a hex-encoded secret key.
+#[allow(dead_code)]
+pub fn import_keypair(hex_secret: &str) -> Result<Keys> {
+    let sk = SecretKey::from_hex(hex_secret)
+        .map_err(|e| VoterError::Identity(format!("invalid secret key hex: {e}")))?;
+    Ok(Keys::new(sk))
+}
+
 /// Save a keypair to disk. If a password is provided, encrypt with age.
 pub fn save_identity(keys: &Keys, password: Option<&str>, path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
