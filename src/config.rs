@@ -1,0 +1,126 @@
+use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
+
+use crate::error::{Result, VoterError};
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AppConfig {
+    #[serde(default = "default_nostr")]
+    pub nostr: NostrConfig,
+    #[serde(default)]
+    pub identity: IdentityConfig,
+    #[serde(default)]
+    pub ui: UiConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NostrConfig {
+    #[serde(default = "default_relays")]
+    pub relays: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IdentityConfig {
+    #[serde(default = "default_identity_path")]
+    pub path: PathBuf,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UiConfig {
+    #[serde(default = "default_theme")]
+    pub theme: Theme,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Theme {
+    Dark,
+    Light,
+}
+
+fn default_relays() -> Vec<String> {
+    vec![
+        "wss://relay.mostro.network".to_string(),
+        "wss://nos.lol".to_string(),
+    ]
+}
+
+fn default_nostr() -> NostrConfig {
+    NostrConfig {
+        relays: default_relays(),
+    }
+}
+
+fn default_identity_path() -> PathBuf {
+    config_dir().join("identity.json")
+}
+
+fn default_theme() -> Theme {
+    Theme::Dark
+}
+
+impl Default for NostrConfig {
+    fn default() -> Self {
+        default_nostr()
+    }
+}
+
+impl Default for IdentityConfig {
+    fn default() -> Self {
+        Self {
+            path: default_identity_path(),
+        }
+    }
+}
+
+impl Default for UiConfig {
+    fn default() -> Self {
+        Self {
+            theme: default_theme(),
+        }
+    }
+}
+
+// Default is auto-derived from field defaults
+
+/// Returns the voter config directory (~/.config/voter/).
+pub fn config_dir() -> PathBuf {
+    directories::ProjectDirs::from("", "", "voter")
+        .map(|dirs| dirs.config_dir().to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
+/// Returns the default config file path (~/.config/voter/voter.toml).
+pub fn config_path() -> PathBuf {
+    config_dir().join("voter.toml")
+}
+
+impl AppConfig {
+    /// Load config from the given path, or create a default if missing.
+    pub fn load(path: &Path) -> Result<Self> {
+        if path.exists() {
+            let contents = std::fs::read_to_string(path)?;
+            let config: AppConfig = toml::from_str(&contents)?;
+            Ok(config)
+        } else {
+            let config = AppConfig::default();
+            config.save(path)?;
+            Ok(config)
+        }
+    }
+
+    /// Save config to the given path, creating parent directories.
+    pub fn save(&self, path: &Path) -> Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let contents = toml::to_string_pretty(self).map_err(VoterError::TomlSer)?;
+        std::fs::write(path, contents)?;
+        Ok(())
+    }
+
+    /// Returns the resolved state file path (~/.config/voter/state.json).
+    pub fn state_path(&self) -> PathBuf {
+        config_dir().join("state.json")
+    }
+}
